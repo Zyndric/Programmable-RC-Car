@@ -19,6 +19,8 @@
 //    along with Programmable RC Car Controller.  If not, see <http://www.gnu.org/licenses/>.
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
+#include <Time.h>
+
 #define DEBUG (1)
 
 // Pin Functions
@@ -33,6 +35,9 @@
 #define LEFT_BIT     (4) // b'0100'
 #define RIGHT_BIT    (8) // b'1000'
 
+// Number of commands the record buffer can hold
+#define CMDBUFFERSIZE (255)
+
 // Each command is 4 bytes in size
 struct Command
 {
@@ -42,12 +47,31 @@ struct Command
     byte checksum;
 };
 
+// Pair a command with its time offset for recording
+struct TimedCmd
+{
+    int timeOffset;
+    Command cmd;
+};
+
 // List of commands
 enum COMMAND_IDS
 {
     INVALID_CMD = 0,
-    DRIVE = 10
+    DRIVE = 10,         // b'0000 1010'
+    RECORD = 18,        // b'0001 0100'
+    REPLAY = 96,        // b'0110 0000'
+    STOP = 129          // b'1000 0001'
 };
+
+// Current state of recorder, initially DRIVE
+byte recorderState = DRIVE;
+
+// Command buffer for recording
+TimedCmd cmdBuffer[CMDBUFFERSIZE];
+int cmdBufferIndex = 0;
+
+time_t startTime = 0;
 
 void setup()
 {
@@ -112,13 +136,46 @@ void driveCar(struct Command &newCmd)
     }
 }
 
+void recordCommand(struct Command &cmd)
+{
+    if (recorderState == RECORD && cmdBufferIndex < CMDBUFFERSIZE) {
+        dbg_print("Recording command");
+        cmdBuffer[cmdBufferIndex].timeOffset = now() - startTime;
+        cmdBuffer[cmdBufferIndex].cmd = cmd;
+        cmdBufferIndex++;
+    }
+}
+
+void enableRecordReplay(byte state)
+{
+    // initiate switch?
+    if (recorderState != state) {
+        recorderState = state;
+        cmdBufferIndex = 0;
+        startTime = now();
+    }
+}
+
 void processCommand(struct Command &newCmd)
 {
     switch (newCmd.id)
     {
         case DRIVE:
             dbg_print("Drive...");
+            recordCommand(newCmd);
             driveCar(newCmd);
+            break;
+        case RECORD:
+            dbg_print("Start record...");
+            enableRecordReplay(RECORD);
+            break;
+        case REPLAY:
+            dbg_print("Start replay...");
+            enableRecordReplay(REPLAY);
+            break;
+        case STOP:
+            dbg_print("Stop record/replay...");
+            recorderState = DRIVE;
             break;
         default:
             // Unknown Command, do nothing
@@ -131,6 +188,13 @@ void processCommand(struct Command &newCmd)
 // Receives data from the serial port and sends it to be processed
 void loop()
 {
+    // replay command
+    if (recorderState == REPLAY && cmdBufferIndex < CMDBUFFERSIZE && now() - startTime >= cmdBuffer[cmdBufferIndex].timeOffset) {
+        dbg_print("Replaying command");
+        processCommand(cmdBuffer[cmdBufferIndex].cmd);
+        cmdBufferIndex++;
+    }
+
     Command incomingCmd;
     if (Serial.available() >= sizeof(Command)) {
         // read the incoming data:
