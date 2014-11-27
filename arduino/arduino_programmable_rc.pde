@@ -28,7 +28,7 @@
 #define RIGHT_PIN    (12)
 
 // Bits to indicate FORWARD, BACKWARD, LEFT, and RIGHT
-#define FORARD_BIT   (1) // b'0001' (binary)
+#define FORWARD_BIT  (1) // b'0001' (binary)
 #define BACKWARD_BIT (2) // b'0010'
 #define LEFT_BIT     (4) // b'0100'
 #define RIGHT_BIT    (8) // b'1000'
@@ -73,7 +73,7 @@ void dbg_print(const char * s)
 void driveCar(struct Command &newCmd)
 {
     // If forward and backward are both enabled, error, remove the backward bit set
-    if ((newCmd.data1 & FORARD_BIT) && (newCmd.data1 & BACKWARD_BIT)) {
+    if ((newCmd.data1 & FORWARD_BIT) && (newCmd.data1 & BACKWARD_BIT)) {
         newCmd.data1 -= BACKWARD_BIT;
     }
     
@@ -83,7 +83,7 @@ void driveCar(struct Command &newCmd)
     }
     
     // Drive forward if enabled
-    if (newCmd.data1 & FORARD_BIT) {
+    if (newCmd.data1 & FORWARD_BIT) {
         // Note: newCmd.data2 is the speed, a PWM value specified in range 0 - 255, 255 = MAX
         analogWrite(FORWARD_PIN, newCmd.data2);
     } else {
