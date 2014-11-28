@@ -35,8 +35,13 @@
 #define LEFT_BIT     (4) // b'0100'
 #define RIGHT_BIT    (8) // b'1000'
 
-// Number of commands the record buffer can hold
-#define CMDBUFFERSIZE (255)
+// Number of commands the record buffer can hold.
+// Button up and button down each counts as one command.
+#define CMDBUFFERSIZE (128)
+
+// get current time in centiseconds, i.e. 0,01 s or 10 ms
+#define CENTISECONDS (millis())
+#define time_type unsigned long
 
 // Each command is 4 bytes in size
 struct Command
@@ -50,7 +55,7 @@ struct Command
 // Pair a command with its time offset for recording
 struct TimedCmd
 {
-    int timeOffset;
+    time_type csTimeOffset;
     Command cmd;
 };
 
@@ -70,8 +75,8 @@ byte recorderState = DRIVE;
 // Command buffer for recording
 TimedCmd cmdBuffer[CMDBUFFERSIZE];
 int cmdBufferIndex = 0;
-
-time_t startTime = 0;
+int replayIndex = 0;
+time_type csStartTime = 0;
 
 void setup()
 {
@@ -89,7 +94,7 @@ void setup()
 void dbg_print(const char * s)
 {
 #if DEBUG
-    Serial.write(s);
+    Serial.println(s);
 #endif
 }
 
@@ -139,21 +144,29 @@ void driveCar(struct Command &newCmd)
 void recordCommand(struct Command &cmd)
 {
     if (recorderState == RECORD && cmdBufferIndex < CMDBUFFERSIZE) {
-        dbg_print("Recording command");
-        cmdBuffer[cmdBufferIndex].timeOffset = now() - startTime;
+        cmdBuffer[cmdBufferIndex].csTimeOffset = CENTISECONDS - csStartTime;
+        char buffer[60];
+        snprintf(buffer, 60, "Recording at index [%u] at time [%u] command [%u].", cmdBufferIndex, cmdBuffer[cmdBufferIndex].csTimeOffset, cmd.data1);
+        dbg_print(buffer);
         cmdBuffer[cmdBufferIndex].cmd = cmd;
         cmdBufferIndex++;
     }
 }
 
-void enableRecordReplay(byte state)
+void resetRecord()
 {
-    // initiate switch?
-    if (recorderState != state) {
-        recorderState = state;
-        cmdBufferIndex = 0;
-        startTime = now();
-    }
+    dbg_print("Resetting record states...");
+    recorderState = RECORD;
+    cmdBufferIndex = 0;
+    csStartTime = CENTISECONDS;
+}
+
+void resetReplay()
+{
+    dbg_print("Resetting replay states...");
+    recorderState = REPLAY;
+    replayIndex = 0;
+    csStartTime = CENTISECONDS;
 }
 
 void processCommand(struct Command &newCmd)
@@ -167,14 +180,32 @@ void processCommand(struct Command &newCmd)
             break;
         case RECORD:
             dbg_print("Start record...");
-            enableRecordReplay(RECORD);
+            if (recorderState != RECORD) {
+                resetRecord();
+            }
             break;
         case REPLAY:
             dbg_print("Start replay...");
-            enableRecordReplay(REPLAY);
+            if (recorderState != REPLAY) {
+                resetReplay();
+            }
             break;
         case STOP:
             dbg_print("Stop record/replay...");
+            // If recording, record the last command again.
+            // This saves the last time gap until the stopping for replay.
+            if (recorderState == RECORD && cmdBufferIndex > 0) {
+                recordCommand(cmdBuffer[cmdBufferIndex-1].cmd);
+            }
+            // If replaying, issue a stop command, so as not to let the car driving endlessly
+            if (recorderState == REPLAY) {
+                Command cmd;
+                cmd.id = DRIVE;
+                cmd.data1 = 0;
+                cmd.data2 = 0;
+                cmd.checksum = 0;
+                driveCar(cmd);
+            }
             recorderState = DRIVE;
             break;
         default:
@@ -188,19 +219,25 @@ void processCommand(struct Command &newCmd)
 // Receives data from the serial port and sends it to be processed
 void loop()
 {
-    // replay command
-    if (recorderState == REPLAY && cmdBufferIndex < CMDBUFFERSIZE && now() - startTime >= cmdBuffer[cmdBufferIndex].timeOffset) {
-        dbg_print("Replaying command");
-        processCommand(cmdBuffer[cmdBufferIndex].cmd);
-        cmdBufferIndex++;
+    if (recorderState == REPLAY) {
+        if (replayIndex >= cmdBufferIndex) {
+            resetReplay();
+        }
+        if (CENTISECONDS - csStartTime >= cmdBuffer[replayIndex].csTimeOffset) {
+            char buffer[60];
+            snprintf(buffer, 60, "Replaying at index [%u] at time [%u] command [%u].", replayIndex, cmdBuffer[replayIndex].csTimeOffset, cmdBuffer[replayIndex].cmd.data1);
+            dbg_print(buffer);
+            processCommand(cmdBuffer[replayIndex].cmd);
+            replayIndex++;
+        }
     }
 
     Command incomingCmd;
-    if (Serial.available() >= sizeof(Command)) {
+    if (Serial.available() >= (signed) sizeof(Command)) {
         // read the incoming data:
         Command * mem = &incomingCmd;
         unsigned char * p = (unsigned char *)mem;
-        for (int i = 0; i < sizeof(Command); i++) {
+        for (unsigned int i = 0; i < sizeof(Command); i++) {
             unsigned int data = Serial.read();
             p[i] = data;
         }
