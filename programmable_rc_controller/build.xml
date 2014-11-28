@@ -1,0 +1,39 @@
+<project default="dist">
+
+	<!-- define directory properties -->
+	<property name="src.dir" location="src" />
+	<property name="bin.dir" location="bin" />
+    <property name="dist.dir" location="dist" />
+
+    <!-- define other properties -->
+    <property name="rxtx.jar" location="lib/rxtx-2.1-7-bins-r2/RXTXcomm.jar" />
+    <property name="dest.jar" location="${dist.dir}/Programmable_RC_Controller.jar" />
+	
+	<target name="clean" description="Clean bin and dist folders.">
+		<delete dir="${dist.dir}" />
+		<delete dir="${bin.dir}" />
+	</target>
+
+	<!-- compile -->
+	<target name="compile">
+        <mkdir dir="${bin.dir}"/>
+		<javac srcdir="${src.dir}" destdir="${bin.dir}" includeantruntime="false">
+			<classpath>
+				<pathelement path="${rxtx.jar}"/>
+			</classpath>
+		</javac>
+	</target>
+	
+	<target name="dist" depends="compile" description="Build a full distribution.">
+        <mkdir dir="${dist.dir}"/>
+		<!-- create jar files -->
+		<jar destfile="${dest.jar}" basedir="${bin.dir}" includes="*.class">
+            <!-- inject rxtx dependencies -->
+            <zipfileset includes="**/*.class" src="${rxtx.jar}"/>
+            <fileset dir="images" includes="*.gif"/>
+            <manifest>
+                <attribute name="Main-Class" value="RCController"/>
+            </manifest>
+        </jar>
+	</target>
+</project>
