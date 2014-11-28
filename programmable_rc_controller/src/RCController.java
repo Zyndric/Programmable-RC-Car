@@ -69,6 +69,12 @@ public class RCController {
         sendCommand(DRIVE_CMD, keyState, speed);
         System.out.println("Sending Command: " + keyState);
     }
+    
+    public synchronized void sendRecorderCommand(Commands cmd)
+    {
+    	sendCommand((byte) cmd.cmdCode, (byte) 0, (byte) 0);
+    	System.out.println("Sending Command: " + cmd);
+    }
 
     // Change the driving speed
     // Also sends the command to the serial port
@@ -130,5 +136,4 @@ public class RCController {
             e.printStackTrace();
         }
     }
-
 }

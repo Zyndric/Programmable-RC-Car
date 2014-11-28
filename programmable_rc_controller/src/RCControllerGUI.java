@@ -38,16 +38,27 @@ import javax.swing.SwingConstants;
 import javax.swing.event.ChangeListener;
 import javax.swing.event.ChangeEvent;
 
+enum RecordState {
+    RECORDING,
+    REPLAYING,
+    STOPPED
+}
+
 // This class is responsible for the Programmable RC Car Controller GUI
 public class RCControllerGUI {
     private JFrame m_frame;
     private JLabel[] m_lblDirections;
+    private JLabel[] m_lblRecorder;
     private ImageIcon[] m_iconImages;
+    private ImageIcon[] m_recorderImages;
     private JTextField m_portField;
     private JSlider m_speedSlider;
     
     // State of the buttons being pressed
     private byte m_keyState = 0;
+
+    // State of the recorder
+    private RecordState m_recordState = RecordState.STOPPED;
     
     private RCController m_controller;
         
@@ -110,6 +121,33 @@ public class RCControllerGUI {
         m_lblDirections[direction].setIcon(m_iconImages[icon_index]);
     }   
 
+    private void updateRecordIcon(Commands command, boolean on) {
+    	int indexOffset = on ? 3 : 0;
+    	m_lblRecorder[command.imgIndex].setIcon(m_recorderImages[command.imgIndex + indexOffset]);
+    }
+    
+    private void updateRecordIcons(Commands command)
+    {
+        switch (command) {
+	    	case RECORD:
+	    		updateRecordIcon(Commands.RECORD, true);
+	    		updateRecordIcon(Commands.REPLAY, false);
+	    		break;
+	    	case REPLAY:
+	    		updateRecordIcon(Commands.RECORD, false);
+	    		updateRecordIcon(Commands.REPLAY, true);
+	    		break;
+	    	case STOP:
+	    		updateRecordIcon(Commands.RECORD, false);
+	    		updateRecordIcon(Commands.REPLAY, false);
+	    		updateRecordIcon(Commands.STOP, true);
+	    		break;
+	    	default:
+	    		// ignore other commands
+	    		break;
+    	}
+    }   
+
     // Draws the GUI to the screen
     private void initialize() {
         m_frame = new JFrame("Programmable RC Car Controller");
@@ -150,6 +188,28 @@ public class RCControllerGUI {
                     if ((m_keyState & m_controller.RIGHT_BIT) == 0) {
                         m_keyState += m_controller.RIGHT_BIT;
                         m_controller.sendDirectionCommand(m_keyState);
+                    }
+                    break;
+                case 'R': // (R)ECORD
+                    updateRecordIcons(Commands.RECORD);
+                    if (m_recordState != RecordState.RECORDING) {
+                        m_recordState = RecordState.RECORDING;
+                        m_controller.sendRecorderCommand(Commands.RECORD);
+                    }
+                    break;
+                case 'P': // RE(P)LAY
+                    updateRecordIcons(Commands.REPLAY);
+                    if (m_recordState != RecordState.REPLAYING) {
+                        m_recordState = RecordState.REPLAYING;
+                        m_controller.sendRecorderCommand(Commands.REPLAY);
+                    }
+                    break;
+                case KeyEvent.VK_SPACE: // STOP
+                case KeyEvent.VK_ENTER:
+                    updateRecordIcons(Commands.STOP);
+                    if (m_recordState != RecordState.STOPPED) {
+                        m_recordState = RecordState.STOPPED;
+                        m_controller.sendRecorderCommand(Commands.STOP);
                     }
                     break;
                 case 61: // +
@@ -202,6 +262,10 @@ public class RCControllerGUI {
                         m_controller.sendDirectionCommand(m_keyState);
                     }
                     break;
+                case KeyEvent.VK_SPACE: // STOP
+                case KeyEvent.VK_ENTER:
+                    updateRecordIcon(Commands.STOP, false);
+                    break;
                     
                 case 27: // ESC
                     break;
@@ -211,14 +275,14 @@ public class RCControllerGUI {
         });
         
         // Setup main frame
-        m_frame.setBounds(100, 100, 450, 300);
+        m_frame.setBounds(100, 100, 450, 400);
         m_frame.setResizable(false);
         m_frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         m_frame.getContentPane().setLayout(null);
 
         // Text field that displays the serial port in use
         m_portField = new JTextField();
-        m_portField.setBounds(81, 244, 216, 28);
+        m_portField.setBounds(81, 344, 216, 28);
         m_portField.setFocusable(false);
         m_portField.setColumns(10);
         m_portField.addMouseListener(new MouseAdapter() {
@@ -252,7 +316,7 @@ public class RCControllerGUI {
         m_frame.getContentPane().add(m_portField);      
         
         JLabel lblPort = new JLabel("Serial Port:");
-        lblPort.setBounds(6, 250, 87, 16);
+        lblPort.setBounds(6, 350, 87, 16);
         m_frame.getContentPane().add(lblPort);
         
         // Speed Slider
@@ -298,7 +362,7 @@ public class RCControllerGUI {
                 processSequenceTxt();
             }
         });
-        btnRunSequencetxt.setBounds(297, 245, 153, 29);
+        btnRunSequencetxt.setBounds(297, 345, 153, 29);
         m_frame.getContentPane().add(btnRunSequencetxt);
         
         // Images used for directions
@@ -322,10 +386,31 @@ public class RCControllerGUI {
         	}
         }
         
+        // Images used for recorder
+        m_recorderImages = new ImageIcon[6];
+        String[] recImgPaths = new String[8];
+        recImgPaths[0] = "record_off.gif";
+        recImgPaths[1] = "replay_off.gif";
+        recImgPaths[2] = "stop_off.gif";
+        recImgPaths[3] = "record_on.gif";
+        recImgPaths[4] = "replay_on.gif";
+        recImgPaths[5] = "stop_on.gif";
+        
+        for (int i = 0; i < m_recorderImages.length; i++) {
+        	try {
+            	m_recorderImages[i] = new ImageIcon(getClass().getResource(recImgPaths[i]));
+        	} catch (Exception e) {
+                System.out.println("Could not load image resource: " + e.getMessage());
+                m_recorderImages[i] = new ImageIcon();
+        	}
+        }
+        
         // Labels that the images will go on
         m_lblDirections = new JLabel[4];
+        m_lblRecorder = new JLabel[3];
         
         // Positioning the direction arrow labels
+        {
         int up_x = 173;
         int up_y = 10;
         int up_size = 75;
@@ -345,6 +430,21 @@ public class RCControllerGUI {
         m_lblDirections[3] = new JLabel(m_iconImages[3]);
         m_lblDirections[3].setBounds(up_x + up_size - 10, up_y + up_size - 10, up_size, up_size);
         m_frame.getContentPane().add(m_lblDirections[3]);
+        }
+        
+        // Positioning the recorder labels
+        {
+        int up_x = 88;
+        int up_y = 230;
+        int up_size = 75;
+        int up_space = 10;
+        
+        for (int i=0; i<m_lblRecorder.length; i++) {
+        	m_lblRecorder[i] = new JLabel(m_recorderImages[i]);       
+            m_lblRecorder[i].setBounds(up_x + i*(up_size+up_space), up_y, up_size, up_size);
+            m_frame.getContentPane().add(m_lblRecorder[i]);
+        }
+        }
     }
     
     // Run the series of programmed commands in sequence.txt
