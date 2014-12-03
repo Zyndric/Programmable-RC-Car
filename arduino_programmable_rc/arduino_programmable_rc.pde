@@ -75,7 +75,8 @@ enum COMMAND_IDS
 // Current state of recorder, initially DRIVE
 byte recorderState = DRIVE;
 
-// Command buffer for recording
+// Command buffer for recording. This easily blows the Arduino's SRAM limit.
+// Currently, size(TimedCmd)*CMDBUFFERSIZE = (4+4)*128 = 1 KB is used.
 TimedCmd cmdBuffer[CMDBUFFERSIZE];
 int cmdBufferIndex = 0;
 int replayIndex = 0;
@@ -98,6 +99,17 @@ void dbg_print(const char * s)
 {
 #if DEBUG
     Serial.println(s);
+#endif
+}
+
+// Serial write a string for debugging the recording buffer.
+void dbg_print_recordreplay_action(const char * action, int index)
+{
+#if DEBUG
+#define RRDBG_BUFFER_SIZE (70)
+    char buffer[RRDBG_BUFFER_SIZE];
+    snprintf(buffer, RRDBG_BUFFER_SIZE, "%s at index [%u] at time [%u] command [%u].", action, index, cmdBuffer[index].csTimeOffset, cmdBuffer[index].cmd.data1);
+    dbg_print(buffer);
 #endif
 }
 
@@ -144,18 +156,19 @@ void driveCar(struct Command &newCmd)
     }
 }
 
+// Adds a command with the current time to the command buffer,
+// if in recording mode. Does not record commands, if buffer is full.
 void recordCommand(struct Command &cmd)
 {
     if (recorderState == RECORD && cmdBufferIndex < CMDBUFFERSIZE) {
         cmdBuffer[cmdBufferIndex].csTimeOffset = CURRENTTIME - csStartTime;
-        char buffer[60];
-        snprintf(buffer, 60, "Recording at index [%u] at time [%u] command [%u].", cmdBufferIndex, cmdBuffer[cmdBufferIndex].csTimeOffset, cmd.data1);
-        dbg_print(buffer);
         cmdBuffer[cmdBufferIndex].cmd = cmd;
+        dbg_print_recordreplay_action("Recorded", cmdBufferIndex);
         cmdBufferIndex++;
     }
 }
 
+// Initialize a record session
 void resetRecord()
 {
     dbg_print("Resetting record states...");
@@ -164,6 +177,7 @@ void resetRecord()
     csStartTime = CURRENTTIME;
 }
 
+// Initialize a replay session
 void resetReplay()
 {
     dbg_print("Resetting replay states...");
@@ -196,11 +210,12 @@ void processCommand(struct Command &newCmd)
         case STOP:
             dbg_print("Stop record/replay...");
             // If recording, record the last command again.
-            // This saves the last time gap until the stopping for replay.
+            // Saves the last time gap for replay,
+            // i.e. the time from the last issued command to the recording stop.
             if (recorderState == RECORD && cmdBufferIndex > 0) {
                 recordCommand(cmdBuffer[cmdBufferIndex-1].cmd);
             }
-            // If replaying, issue a stop command, so as not to let the car driving endlessly
+            // If stopping replay, issue a stop command, so as not to let the car drive endlessly
             if (recorderState == REPLAY) {
                 Command cmd;
                 cmd.id = DRIVE;
@@ -223,13 +238,13 @@ void processCommand(struct Command &newCmd)
 void loop()
 {
     if (recorderState == REPLAY) {
+        // Restart replay if end of record reached
         if (replayIndex >= cmdBufferIndex) {
             resetReplay();
         }
+        // If time of next recorded command reached, replay it.
         if (CURRENTTIME - csStartTime >= cmdBuffer[replayIndex].csTimeOffset) {
-            char buffer[60];
-            snprintf(buffer, 60, "Replaying at index [%u] at time [%u] command [%u].", replayIndex, cmdBuffer[replayIndex].csTimeOffset, cmdBuffer[replayIndex].cmd.data1);
-            dbg_print(buffer);
+            dbg_print_recordreplay_action("Replaying", replayIndex);
             processCommand(cmdBuffer[replayIndex].cmd);
             replayIndex++;
         }
