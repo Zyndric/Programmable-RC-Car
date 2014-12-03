@@ -39,8 +39,11 @@
 // Button up and button down each counts as one command.
 #define CMDBUFFERSIZE (128)
 
-// get current time in centiseconds, i.e. 0,01 s or 10 ms
-#define CENTISECONDS (millis())
+// Get current time in milliseconds on an unsigned long,
+// allowing 1000 hours long recording sessions.
+// Save space by using centiseconds, i.e. 0,01 s or 10 ms, or similar,
+// on an unsigned int, allowing for about 10 minutes recording time.
+#define CURRENTTIME (millis())
 #define time_type unsigned long
 
 // Each command is 4 bytes in size
@@ -144,7 +147,7 @@ void driveCar(struct Command &newCmd)
 void recordCommand(struct Command &cmd)
 {
     if (recorderState == RECORD && cmdBufferIndex < CMDBUFFERSIZE) {
-        cmdBuffer[cmdBufferIndex].csTimeOffset = CENTISECONDS - csStartTime;
+        cmdBuffer[cmdBufferIndex].csTimeOffset = CURRENTTIME - csStartTime;
         char buffer[60];
         snprintf(buffer, 60, "Recording at index [%u] at time [%u] command [%u].", cmdBufferIndex, cmdBuffer[cmdBufferIndex].csTimeOffset, cmd.data1);
         dbg_print(buffer);
@@ -158,7 +161,7 @@ void resetRecord()
     dbg_print("Resetting record states...");
     recorderState = RECORD;
     cmdBufferIndex = 0;
-    csStartTime = CENTISECONDS;
+    csStartTime = CURRENTTIME;
 }
 
 void resetReplay()
@@ -166,7 +169,7 @@ void resetReplay()
     dbg_print("Resetting replay states...");
     recorderState = REPLAY;
     replayIndex = 0;
-    csStartTime = CENTISECONDS;
+    csStartTime = CURRENTTIME;
 }
 
 void processCommand(struct Command &newCmd)
@@ -223,7 +226,7 @@ void loop()
         if (replayIndex >= cmdBufferIndex) {
             resetReplay();
         }
-        if (CENTISECONDS - csStartTime >= cmdBuffer[replayIndex].csTimeOffset) {
+        if (CURRENTTIME - csStartTime >= cmdBuffer[replayIndex].csTimeOffset) {
             char buffer[60];
             snprintf(buffer, 60, "Replaying at index [%u] at time [%u] command [%u].", replayIndex, cmdBuffer[replayIndex].csTimeOffset, cmdBuffer[replayIndex].cmd.data1);
             dbg_print(buffer);
