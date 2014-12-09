@@ -19,8 +19,6 @@
 //    along with Programmable RC Car Controller.  If not, see <http://www.gnu.org/licenses/>.
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
-#include <Time.h>
-
 #define DEBUG (1)
 
 // Pin Functions
