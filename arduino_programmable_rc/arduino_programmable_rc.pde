@@ -20,12 +20,15 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
 #define DEBUG (1)
+#define LED (13)
 
 // Pin Functions
 #define FORWARD_PIN   (9)
 #define BACKWARD_PIN (10)
 #define LEFT_PIN     (11)
 #define RIGHT_PIN    (12)
+
+#define READ_FORWARD_PIN (A0)
 
 // Bits to indicate FORWARD, BACKWARD, LEFT, and RIGHT
 #define FORWARD_BIT  (1) // b'0001' (binary)
@@ -80,6 +83,8 @@ int cmdBufferIndex = 0;
 int replayIndex = 0;
 time_type csStartTime = 0;
 
+bool buttonState = false;
+
 void setup()
 {
     // Setup Pin I/O Functions
@@ -87,6 +92,9 @@ void setup()
     pinMode(BACKWARD_PIN, OUTPUT);
     pinMode(LEFT_PIN, OUTPUT);
     pinMode(RIGHT_PIN, OUTPUT);
+
+    pinMode(READ_FORWARD_PIN, INPUT);
+    pinMode(LED, OUTPUT);
     
     // Initialize Serial
     Serial.begin(9600);
@@ -109,6 +117,16 @@ void dbg_print_recordreplay_action(const char * action, int index)
     snprintf(buffer, RRDBG_BUFFER_SIZE, "%s at index [%u] at time [%u] command [%u].", action, index, cmdBuffer[index].csTimeOffset, cmdBuffer[index].cmd.data1);
     dbg_print(buffer);
 #endif
+}
+
+void dbg_print_voltage(int voltage)
+{
+#if DEBUG
+#define BTDBG_BUFFER_SIZE (30)
+    char buffer[BTDBG_BUFFER_SIZE];
+    snprintf(buffer, BTDBG_BUFFER_SIZE, "Button voltage [%u].", voltage);
+    dbg_print(buffer);
+#endif    
 }
 
 // Decodes a command struct, does some error checking, and controls the Arduino pins
@@ -235,6 +253,15 @@ void processCommand(struct Command &newCmd)
 // Receives data from the serial port and sends it to be processed
 void loop()
 {
+    bool newState;
+
+    // check for button presses
+    newState = analogRead(READ_FORWARD_PIN) < 400;      // when voltage drops under 2V
+    digitalWrite(LED, newState ? HIGH : LOW);
+    delay(5);
+    dbg_print_voltage(analogRead(READ_FORWARD_PIN));
+    
+
     if (recorderState == REPLAY) {
         // Restart replay if end of record reached
         if (replayIndex >= cmdBufferIndex) {
