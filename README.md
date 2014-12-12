@@ -16,5 +16,5 @@ start recording with the [R] key, drive some time ([W] [A] [S] [D] or
 arrow keys), then press [SPACE] to stop recording. When a pattern has been
 recorded, play [P] to start playback, [SPACE] again to stop it.
 
-The recorder is going to be extended to even record hardware key presses,
+The recorder has been extended to even record hardware key presses,
 enabling you to use the remote control buttons for recording sessions.

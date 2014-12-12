@@ -20,7 +20,7 @@
 ////////////////////////////////////////////////////////////////////////////////////////////////
 
 #define DEBUG (1)
-#define LED (13)
+#define RECORDLED (13)
 
 // Pin Functions
 #define FORWARD_PIN   (9)
@@ -28,7 +28,10 @@
 #define LEFT_PIN     (11)
 #define RIGHT_PIN    (12)
 
-#define READ_FORWARD_PIN (A0)
+#define READ_FORWARD_PIN  (4)
+#define READ_BACKWARD_PIN (5)
+#define READ_LEFT_PIN     (6)
+#define READ_RIGHT_PIN    (7)
 
 // Bits to indicate FORWARD, BACKWARD, LEFT, and RIGHT
 #define FORWARD_BIT  (1) // b'0001' (binary)
@@ -54,6 +57,10 @@ struct Command
     byte data1;
     byte data2;
     byte checksum;
+
+    bool operator!=(Command other) {
+        return id!=other.id || data1!=other.data1 || data2!=other.data2;
+    }
 };
 
 // Pair a command with its time offset for recording
@@ -83,7 +90,7 @@ int cmdBufferIndex = 0;
 int replayIndex = 0;
 time_type csStartTime = 0;
 
-bool buttonState = false;
+Command currentCmd = constructStopCommand();
 
 void setup()
 {
@@ -94,7 +101,11 @@ void setup()
     pinMode(RIGHT_PIN, OUTPUT);
 
     pinMode(READ_FORWARD_PIN, INPUT);
-    pinMode(LED, OUTPUT);
+    pinMode(READ_BACKWARD_PIN, INPUT);
+    pinMode(READ_LEFT_PIN, INPUT);
+    pinMode(READ_RIGHT_PIN, INPUT);
+
+    pinMode(RECORDLED, OUTPUT);
     
     // Initialize Serial
     Serial.begin(9600);
@@ -114,19 +125,9 @@ void dbg_print_recordreplay_action(const char * action, int index)
 #if DEBUG
 #define RRDBG_BUFFER_SIZE (70)
     char buffer[RRDBG_BUFFER_SIZE];
-    snprintf(buffer, RRDBG_BUFFER_SIZE, "%s at index [%u] at time [%u] command [%u].", action, index, cmdBuffer[index].csTimeOffset, cmdBuffer[index].cmd.data1);
+    snprintf(buffer, RRDBG_BUFFER_SIZE, "%s at index [%u] at time [%lu] command [%u].", action, index, cmdBuffer[index].csTimeOffset, cmdBuffer[index].cmd.data1);
     dbg_print(buffer);
 #endif
-}
-
-void dbg_print_voltage(int voltage)
-{
-#if DEBUG
-#define BTDBG_BUFFER_SIZE (30)
-    char buffer[BTDBG_BUFFER_SIZE];
-    snprintf(buffer, BTDBG_BUFFER_SIZE, "Button voltage [%u].", voltage);
-    dbg_print(buffer);
-#endif    
 }
 
 // Decodes a command struct, does some error checking, and controls the Arduino pins
@@ -172,6 +173,32 @@ void driveCar(struct Command &newCmd)
     }
 }
 
+Command constructCurrentCommand()
+{
+    Command cmd;
+    cmd.id = DRIVE;
+    
+    cmd.data1 = 0;
+    cmd.data1 |= (digitalRead(READ_FORWARD_PIN)==LOW)?FORWARD_BIT:0;
+    cmd.data1 |= (digitalRead(READ_BACKWARD_PIN)==LOW)?BACKWARD_BIT:0;
+    cmd.data1 |= (digitalRead(READ_LEFT_PIN)==LOW)?LEFT_BIT:0;
+    cmd.data1 |= (digitalRead(READ_RIGHT_PIN)==LOW)?RIGHT_BIT:0;
+
+    cmd.data2 = 255;
+    cmd.checksum = 0;
+    return cmd;
+}
+
+Command constructStopCommand()
+{
+    Command cmd;
+    cmd.id = DRIVE;
+    cmd.data1 = 0;
+    cmd.data2 = 255;
+    cmd.checksum = 0;
+    return cmd;
+}
+
 // Adds a command with the current time to the command buffer,
 // if in recording mode. Does not record commands, if buffer is full.
 void recordCommand(struct Command &cmd)
@@ -208,7 +235,9 @@ void processCommand(struct Command &newCmd)
     {
         case DRIVE:
             dbg_print("Drive...");
-            recordCommand(newCmd);
+            // deactivate this here for now
+            // in the long run, we need to reactivate this, though, lest a PWM signal blows our record buffer
+            //recordCommand(newCmd);
             driveCar(newCmd);
             break;
         case RECORD:
@@ -233,12 +262,8 @@ void processCommand(struct Command &newCmd)
             }
             // If stopping replay, issue a stop command, so as not to let the car drive endlessly
             if (recorderState == REPLAY) {
-                Command cmd;
-                cmd.id = DRIVE;
-                cmd.data1 = 0;
-                cmd.data2 = 0;
-                cmd.checksum = 0;
-                driveCar(cmd);
+                Command stop = constructStopCommand();
+                driveCar(stop);
             }
             recorderState = DRIVE;
             break;
@@ -253,15 +278,7 @@ void processCommand(struct Command &newCmd)
 // Receives data from the serial port and sends it to be processed
 void loop()
 {
-    bool newState;
-
-    // check for button presses
-    newState = analogRead(READ_FORWARD_PIN) < 400;      // when voltage drops under 2V
-    digitalWrite(LED, newState ? HIGH : LOW);
-    delay(5);
-    dbg_print_voltage(analogRead(READ_FORWARD_PIN));
-    
-
+    // replay any command in order
     if (recorderState == REPLAY) {
         // Restart replay if end of record reached
         if (replayIndex >= cmdBufferIndex) {
@@ -275,6 +292,17 @@ void loop()
         }
     }
 
+    // record from the actual hardware button values
+    if (recorderState == RECORD) {
+        Command newCmd = constructCurrentCommand();
+        if (currentCmd != newCmd) {
+            currentCmd = newCmd;
+            recordCommand(currentCmd);
+            delay(5);
+        }
+    }
+
+    // check for command from serial interface / Java GUI
     Command incomingCmd;
     if (Serial.available() >= (signed) sizeof(Command)) {
         // read the incoming data:
@@ -289,7 +317,7 @@ void loop()
         byte received_sum = incomingCmd.id + incomingCmd.data1 + incomingCmd.data2;
         if (incomingCmd.id != INVALID_CMD && received_sum == incomingCmd.checksum) {
             processCommand(incomingCmd);
-            dbg_print("Good Cmd - checksum matched");
+            //dbg_print("Good Cmd - checksum matched");
         } else {
             //Checksum didn't match, don't process the command
             dbg_print("Bad Cmd - invalid cmd or checksum didn't match");
