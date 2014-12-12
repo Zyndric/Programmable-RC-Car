@@ -244,12 +244,15 @@ void processCommand(struct Command &newCmd)
             dbg_print("Start record...");
             if (recorderState != RECORD) {
                 resetRecord();
+                digitalWrite(RECORDLED, HIGH);
             }
             break;
         case REPLAY:
             dbg_print("Start replay...");
             if (recorderState != REPLAY) {
                 resetReplay();
+                // update record/replay led
+                digitalWrite(RECORDLED, HIGH);
             }
             break;
         case STOP:
@@ -266,12 +269,15 @@ void processCommand(struct Command &newCmd)
                 driveCar(stop);
             }
             recorderState = DRIVE;
+            digitalWrite(RECORDLED, LOW);
             break;
         default:
             // Unknown Command, do nothing
             dbg_print("Invalid cmd received...");
             break;
     }
+
+    
 }
 
 // Main control loop
